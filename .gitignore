@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+checkpoints/
+checkpoints_mini/
+checkpoints_monster/
+.gemini/
+.env
+*.pt
+*.log
+tokenizer.model
