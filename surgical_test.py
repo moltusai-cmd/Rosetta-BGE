@@ -510,5 +510,167 @@ def surgical_test():
                        "A beautiful wooden house in the forest", 
                        "A house burning with flames and black smoke")
 
+    def run_queen_quest(name, text_base, text_minus, text_plus):
+        print(f"\n👑 THE QUEEN QUEST: {name} ({text_base} - {text_minus} + {text_plus})")
+        # Sweep granulaire
+        weights = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+        with torch.no_grad():
+            emb_base = encoder.encode([text_base], convert_to_tensor=True, normalize_embeddings=True)
+            emb_minus = encoder.encode([text_minus], convert_to_tensor=True, normalize_embeddings=True)
+            emb_plus = encoder.encode([text_plus], convert_to_tensor=True, normalize_embeddings=True)
+            
+            for w in weights:
+                result_emb = torch.nn.functional.normalize(emb_base - (w * emb_minus) + (w * emb_plus), p=2, dim=1)
+                
+                # Décodage
+                tokens = torch.full((1, model.num_tokens), model.mask_id, dtype=torch.long, device=device)
+                repetition_penalty = 2.0
+                for t in range(24):
+                    logits = model(result_emb, tokens)
+                    if t > 0:
+                        for b in range(1):
+                            for token_id in set(tokens[b].tolist()):
+                                if token_id != model.mask_id:
+                                    mask_pos = logits[b, :, token_id] > 0
+                                    logits[b, mask_pos, token_id] /= repetition_penalty
+                                    logits[b, ~mask_pos, token_id] *= repetition_penalty
+                    _, predictions = torch.max(logits, dim=-1)
+                    num_to_mask = max(0, int(model.num_tokens * (1 - (t + 1) / 24)))
+                    if num_to_mask > 0:
+                        _, mask_indices = torch.topk(torch.softmax(logits, dim=-1).max(dim=-1)[0], num_to_mask, largest=False, dim=-1)
+                        tokens = predictions.clone()
+                        tokens[0, mask_indices] = model.mask_id
+                    else:
+                        tokens = predictions
+                print(f"   [W={w:.2f}] ✨ {sp.decode(tokens[0].tolist())}")
+
+    def run_queen_laboratory():
+        print("\n🧪 --- QUEEN LABORATORY: FINDING THE MONARCH ---")
+        
+        def test_recipe(recipe_name, formula_fn):
+            print(f"\n⚗️ Recipe: {recipe_name}")
+            weights = [0.8, 1.0, 1.2, 1.5, 2.0]
+            with torch.no_grad():
+                for w in weights:
+                    result_emb = formula_fn(w)
+                    result_emb = torch.nn.functional.normalize(result_emb, p=2, dim=1)
+                    
+                    # Décodage (avec pénalité de répétition pour éviter les "King King")
+                    tokens = torch.full((1, model.num_tokens), model.mask_id, dtype=torch.long, device=device)
+                    for t in range(24):
+                        logits = model(result_emb, tokens)
+                        # On pénalise un peu "King" pour forcer la bascule
+                        king_id = sp.piece_to_id(" King")
+                        if king_id != -1:
+                            logits[0, :, king_id] -= 1.0 
+                            
+                        _, predictions = torch.max(logits, dim=-1)
+                        num_to_mask = max(0, int(model.num_tokens * (1 - (t + 1) / 24)))
+                        if num_to_mask > 0:
+                            _, mask_indices = torch.topk(torch.softmax(logits, dim=-1).max(dim=-1)[0], num_to_mask, largest=False, dim=-1)
+                            tokens = predictions.clone()
+                            tokens[0, mask_indices] = model.mask_id
+                        else:
+                            tokens = predictions
+                    print(f"   [W={w:.2f}] ✨ {sp.decode(tokens[0].tolist())}")
+
+        # Les ingrédients
+        e_king = encoder.encode(["King"], convert_to_tensor=True, normalize_embeddings=True)
+        e_woman = encoder.encode(["Woman"], convert_to_tensor=True, normalize_embeddings=True)
+        e_female = encoder.encode(["female"], convert_to_tensor=True, normalize_embeddings=True)
+        e_royalty = encoder.encode(["Royalty"], convert_to_tensor=True, normalize_embeddings=True)
+        e_man = encoder.encode(["Man"], convert_to_tensor=True, normalize_embeddings=True)
+
+        # 1. Intersection (AVG)
+        test_recipe("Intersection (King avg Woman)", lambda w: (e_king + (w * e_woman)) / 2)
+        
+        # 2. Saturation (ADD)
+        test_recipe("Saturation (King add Woman)", lambda w: e_king + (w * e_woman))
+        
+        # 3. Attribut (King add Female)
+        test_recipe("Attribut (King add Female)", lambda w: e_king + (w * e_female))
+        
+        # 4. Essence (Royalty add Woman)
+        test_recipe("Essence (Royalty add Woman)", lambda w: e_royalty + (w * e_woman))
+        
+        # 5. La Chirurgie (King - Man + Woman) - Version Renforcée
+        test_recipe("Chirurgie (King - Man + Woman)", lambda w: e_king - (w * e_man) + (w * e_woman))
+
+    def run_difference_study():
+        print("\n🔬 --- DIFFERENCE STUDY: THE ROYAL GENOME ---")
+        
+        def test_diff(name, text_a, text_b):
+            print(f"\n🧬 Difference: {name} ({text_a} - {text_b})")
+            weights = [0.5, 1.0, 1.5, 2.0]
+            with torch.no_grad():
+                emb_a = encoder.encode([text_a], convert_to_tensor=True, normalize_embeddings=True)
+                emb_b = encoder.encode([text_b], convert_to_tensor=True, normalize_embeddings=True)
+                
+                for w in weights:
+                    result_emb = torch.nn.functional.normalize(emb_a - (w * emb_b), p=2, dim=1)
+                    
+                    # Décodage
+                    tokens = torch.full((1, model.num_tokens), model.mask_id, dtype=torch.long, device=device)
+                    for t in range(24):
+                        logits = model(result_emb, tokens)
+                        _, predictions = torch.max(logits, dim=-1)
+                        num_to_mask = max(0, int(model.num_tokens * (1 - (t + 1) / 24)))
+                        if num_to_mask > 0:
+                            _, mask_indices = torch.topk(torch.softmax(logits, dim=-1).max(dim=-1)[0], num_to_mask, largest=False, dim=-1)
+                            tokens = predictions.clone()
+                            tokens[0, mask_indices] = model.mask_id
+                        else:
+                            tokens = predictions
+                    print(f"   [W={w:.2f}] ✨ {sp.decode(tokens[0].tolist())}")
+
+        # Le Test d'orthographe (Rosetta connaît-elle le mot ?)
+        print("\n📝 Spelling Test: Can Rosetta decode 'Queen' alone?")
+        with torch.no_grad():
+            emb_queen = encoder.encode(["Queen"], convert_to_tensor=True, normalize_embeddings=True)
+            tokens = model.decode(emb_queen, num_steps=24)
+            print(f"   BGE('Queen') ➔ ✨ {sp.decode(tokens[0].tolist())}")
+
+        test_diff("Masculinité Royale", "King", "Queen")
+        test_diff("Féminité Royale", "Queen", "King")
+
+    run_difference_study()
+
+    def run_queen_quest(name, text_base, text_minus, text_plus):
+        print(f"\n👑 THE QUEEN QUEST: {name} ({text_base} - {text_minus} + {text_plus})")
+        weights = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+        with torch.no_grad():
+            emb_base = encoder.encode([text_base], convert_to_tensor=True, normalize_embeddings=True)
+            emb_minus = encoder.encode([text_minus], convert_to_tensor=True, normalize_embeddings=True)
+            emb_plus = encoder.encode([text_plus], convert_to_tensor=True, normalize_embeddings=True)
+            for w in weights:
+                result_emb = torch.nn.functional.normalize(emb_base - (w * emb_minus) + (w * emb_plus), p=2, dim=1)
+                tokens = model.decode(result_emb, num_steps=24)
+                print(f"   [W={w:.2f}] ✨ {sp.decode(tokens[0].tolist())}")
+
+    run_queen_quest("Le Trône (Noms)", "king", "man", "woman")
+    run_queen_quest("Le Trône (Noms)", "the king", "the man", "the woman")
+    run_queen_quest("Le Trône (Noms)", "the king", "the male", "the female")
+    run_queen_quest("Le Trône (Pronoms)", "king", "his", "her")
+    run_queen_quest("Le Trône (Pronoms)", "king", "him", "her")
+    run_queen_quest("Le Trône (Pronoms)", "king", "he", "she")
+    run_queen_quest("Le Trône (Pronoms)", "king", "male", "female")
+    run_queen_quest("Le Trône (Pronoms)", "king", "boy", "girl")
+    run_queen_quest("Le Trône (Pronoms)", "king", "a male biological human", "a female biological human")
+    run_queen_quest("Le Trône (Pronoms)", "king", "human", "female")
+
+    def run_royal_lerp():
+        print("\n👑 --- ROYAL LERP: THE KING-QUEEN BRIDGE ---")
+        steps = 11
+        with torch.no_grad():
+            emb_king = encoder.encode(["King"], convert_to_tensor=True, normalize_embeddings=True)
+            emb_queen = encoder.encode(["Queen"], convert_to_tensor=True, normalize_embeddings=True)
+            for i in range(steps):
+                alpha = i / (steps - 1)
+                result_emb = torch.nn.functional.normalize((1-alpha) * emb_king + alpha * emb_queen, p=2, dim=1)
+                tokens = model.decode(result_emb, num_steps=24)
+                print(f"   [α={alpha:.2f}] ✨ {sp.decode(tokens[0].tolist())}")
+
+    run_royal_lerp()
+
 if __name__ == "__main__":
     surgical_test()

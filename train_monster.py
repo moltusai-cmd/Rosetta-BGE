@@ -108,14 +108,20 @@ def train_monster():
             if 'min_lr' not in param_group:
                 param_group['min_lr'] = args.lr / 10000.0
 
-    print(f"📈 Scheduler: Reprise au step {global_step} sur {total_steps} (Fin à l'Epoch 6)")
+    # On bride le LR max pour la sécurité de l'architecture v6
+    safe_lr = min(args.lr, 8e-4)
+    if args.lr > 8e-4:
+        print(f"⚠️ LR {args.lr} est trop risqué pour v6. Bridage de sécurité à {safe_lr}")
+
+    print(f"📈 Scheduler: Reprise au step {global_step} sur {total_steps} (Fin à l'Epoch {args.epochs})")
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=args.lr, 
+        optimizer, max_lr=safe_lr, 
         total_steps=total_steps,
         last_epoch=global_step-1,
         pct_start=args.pct_start,
         cycle_momentum=False
     )
+
     
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     
@@ -192,8 +198,14 @@ def train_monster():
                     loss_ce = criterion(logits.reshape(-1, logits.size(-1)), tokens.reshape(-1))
                     
                     # 2. InfoNCE Sémantique (Contrastive)
-                    # On veut que semantic_pred soit proche de embs[i] et loin des autres embs du batch
-                    temp_contrast = 0.07
+                    # --- RÉGIME DE RÉSOLUTION DYNAMIQUE ---
+                    if epoch < 3:
+                        temp_contrast = 0.1 # Dégrossissage
+                    elif epoch < 6:
+                        temp_contrast = 0.07 # Polissage HD
+                    else:
+                        temp_contrast = 0.05 # Polissage DIAMANT (Dès Epoch 7)
+                        
                     sim_matrix = F.cosine_similarity(semantic_pred.unsqueeze(1), embs.unsqueeze(0), dim=-1) / temp_contrast
                     labels = torch.arange(batch_size, device=device)
                     loss_sem = F.cross_entropy(sim_matrix, labels)
@@ -205,7 +217,17 @@ def train_monster():
                 
                 if (i + 1) % args.grad_accum == 0:
                     scaler.unscale_(optimizer)
-                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    
+                    # Clipping dynamique corrélé à la résolution
+                    if epoch < 3:
+                        current_clip = 1.0
+                    elif epoch < 6:
+                        current_clip = 0.5
+                    else:
+                        current_clip = 0.3 # Sécurité maximale en mode diamant
+                        
+                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), current_clip)
+                    
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad()
