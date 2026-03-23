@@ -3,6 +3,7 @@ import torch
 import sentencepiece as spm
 from sentence_transformers import SentenceTransformer
 from model import DiffusionRosetta
+from model_v6 import DiffusionRosettaV6
 
 def surgical_test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -11,8 +12,9 @@ def surgical_test():
     sp = spm.SentencePieceProcessor(model_file="tokenizer.model")
     encoder = SentenceTransformer("BAAI/bge-small-en-v1.5", device=device)
     
-    # Config Monster 70M
-    model = DiffusionRosetta(vocab_size=sp.get_piece_size(), d_model=1024, num_cycles=6).to(device)
+    # --- CONFIGURATION DU MODÈLE ---
+    # On utilise la v6 Ultra pour ce test
+    model = DiffusionRosettaV6(vocab_size=sp.get_piece_size(), d_model=1024, num_cycles=6).to(device)
     
     ckpt_path = "rosetta_mini_monster_v5.pt"
     if os.path.exists(ckpt_path):
@@ -26,7 +28,7 @@ def surgical_test():
             new_state_dict[name] = v
             
         model.load_state_dict(new_state_dict)
-        print(f"✅ Loaded Monster brain: {ckpt_path}")
+        print(f"✅ Loaded Monster v6 brain: {ckpt_path} (Step {ckpt.get('step')})")
     else:
         print(f"❌ Checkpoint {ckpt_path} introuvable.")
         return

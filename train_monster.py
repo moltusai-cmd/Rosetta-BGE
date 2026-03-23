@@ -13,15 +13,21 @@ import random
 
 # Import Rosetta Diffusion from local model.py
 from model import DiffusionRosetta
+from model_v6 import DiffusionRosettaV6
 
 def train_monster():
     parser = argparse.ArgumentParser(description="🚜 Rosetta-Monster 20M Training Suite")
-    parser.add_argument('--data-dir', type=str, default='data/monster_chunks')
+    parser.add_argument('--data-dir', type=str, default='/home/nini/Model_training/data/monster_chunks')
+    parser.add_argument('--v6', action='store_true', help="Utiliser la version v6 (Ultra)")
     parser.add_argument('--lr', type=float, default=5e-4) 
-    parser.add_argument('--batch-size', type=int, default=512) # Réduit pour éviter OOM
+    parser.add_argument('--weight-decay', type=float, default=0.01)
+    parser.add_argument('--sem-weight', type=float, default=0.5)
+    parser.add_argument('--pct-start', type=float, default=0.3)
+    parser.add_argument('--batch-size', type=int, default=512) 
     parser.add_argument('--grad-accum', type=int, default=2)   # 512 * 2 = 1024 (Effective)
     parser.add_argument('--epochs', type=int, default=6) 
     parser.add_argument('--resume', type=str, default=None, help="Chemin vers le checkpoint .pt")
+    parser.add_argument('--trial', action='store_true', help="Mode Auto-ML : pas de load/save")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,26 +40,35 @@ def train_monster():
     print(f"📦 Found {len(chunk_files)} chunks in {args.data_dir}")
     
     # 2. Forge du PRO Rosetta
-    print("🏗️ Forge du Dénoiseur PRO 70M (d_model=1024, cycles=6)...")
-    model = DiffusionRosetta(
-        vocab_size=vocab_size, 
-        d_model=1024, 
-        n_heads=16,
-        num_cycles=6
-    ).to(device)
+    if args.v6:
+        print("🏗️ Forge du Dénoiseur ULTRA 70M v6.0 (SwiGLU, Weight Tying)...")
+        model = DiffusionRosettaV6(
+            vocab_size=vocab_size, 
+            d_model=1024, 
+            n_heads=16,
+            num_cycles=6
+        ).to(device)
+    else:
+        print("🏗️ Forge du Dénoiseur PRO 70M v5.2 (Original)...")
+        model = DiffusionRosetta(
+            vocab_size=vocab_size, 
+            d_model=1024, 
+            n_heads=16,
+            num_cycles=6
+        ).to(device)
 
     # 🛰️ BGE Encoder (pour Short-Form Augmentation)
     print("🛰️ Loading BGE Encoder for on-the-fly augmentation...")
     encoder = SentenceTransformer("BAAI/bge-small-en-v1.5", device=device)
     encoder.eval()
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scaler = GradScaler()
     
     start_epoch = 0
     start_chunk = 0
     global_step = 0
-    if args.resume and os.path.exists(args.resume):
+    if not args.trial and args.resume and os.path.exists(args.resume):
         print(f"🔄 Reprise depuis {args.resume}...")
         ckpt = torch.load(args.resume, map_location=device, weights_only=False)
         
@@ -98,10 +113,15 @@ def train_monster():
         optimizer, max_lr=args.lr, 
         total_steps=total_steps,
         last_epoch=global_step-1,
+        pct_start=args.pct_start,
         cycle_momentum=False
     )
     
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    
+    # SWA (Stochastic Weight Averaging) pour la fin
+    swa_model = torch.optim.swa_utils.AveragedModel(model)
+    swa_start = int(args.epochs * 0.8) # On commence SWA aux derniers 20%
     
     print(f"🌊 Entraînement sur {total_steps} steps (Effective batch size: {effective_batch})...")
     model.train()
@@ -118,7 +138,14 @@ def train_monster():
                 continue
             data = torch.load(chunk_path, map_location="cpu", weights_only=True)
             dataset = TensorDataset(data['embeddings'], data['token_ids'].long())
-            loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+            loader = DataLoader(
+                dataset, 
+                batch_size=args.batch_size, 
+                shuffle=True, 
+                num_workers=4,
+                pin_memory=True,
+                persistent_workers=True
+            )
             
             pbar = tqdm(loader, desc=f"Epoch {epoch+1} | Chunk {chunk_idx+1}/{len(chunk_files)}")
             
@@ -149,19 +176,30 @@ def train_monster():
                         embs = encoder.encode(new_texts, convert_to_tensor=True, normalize_embeddings=True, show_progress_bar=False).float()
                 # --------------------------------------------------
                 
-                # Diffusion Masking
-                t = torch.rand((batch_size, 1), device=device)
+                # --- 🎭 CURRICULUM MASKING ---
+                # On augmente la difficulté (t_max) avec le temps
+                progress = global_step / total_steps
+                t_max = 0.5 + (0.5 * progress) # De 0.5 à 1.0
+                t = (torch.rand((batch_size, 1), device=device) * t_max)
+                
                 noise_mask = (torch.rand(tokens.shape, device=device) < t).long()
                 input_tokens = tokens * (1 - noise_mask) + mask_id * noise_mask
                 
                 with autocast(device_type='cuda', dtype=torch.bfloat16):
                     logits, semantic_pred = model(embs, input_tokens, return_semantic=True) 
                     
-                    loss_ce = criterion(logits.reshape(-1, vocab_size), tokens.reshape(-1))
-                    loss_sem = 1.0 - F.cosine_similarity(semantic_pred, embs).mean()
+                    # 1. Cross-Entropy (Orthographe/Syntaxe)
+                    loss_ce = criterion(logits.reshape(-1, logits.size(-1)), tokens.reshape(-1))
+                    
+                    # 2. InfoNCE Sémantique (Contrastive)
+                    # On veut que semantic_pred soit proche de embs[i] et loin des autres embs du batch
+                    temp_contrast = 0.07
+                    sim_matrix = F.cosine_similarity(semantic_pred.unsqueeze(1), embs.unsqueeze(0), dim=-1) / temp_contrast
+                    labels = torch.arange(batch_size, device=device)
+                    loss_sem = F.cross_entropy(sim_matrix, labels)
                     
                     # Normalisation par grad_accum
-                    loss = (loss_ce + 0.5 * loss_sem) / args.grad_accum
+                    loss = (loss_ce + args.sem_weight * loss_sem) / args.grad_accum
                 
                 scaler.scale(loss).backward()
                 
@@ -173,10 +211,18 @@ def train_monster():
                     optimizer.zero_grad()
                     scheduler.step()
                     global_step += 1
+                    
+                    # Mise à jour SWA en fin d'entraînement
+                    if epoch >= swa_start:
+                        swa_model.update_parameters(model)
 
                     if global_step % 100 == 0:
                         preds = torch.argmax(logits, dim=-1)
                         acc = (preds == tokens).float().mean()
+                        metrics_str = f"STEP={global_step} L_CE={loss_ce.item() * args.grad_accum:.4f} L_SEM={loss_sem.item():.4f} Acc={acc.item():.4f} GN={grad_norm.item():.2f}"
+                        if args.trial:
+                            print(metrics_str) # Nouvelle ligne pour le tuner
+                        
                         pbar.set_postfix({
                             'L_CE': f'{loss_ce.item() * args.grad_accum:.2f}', 
                             'L_SEM': f'{loss_sem.item():.2f}', 
@@ -186,7 +232,7 @@ def train_monster():
                         })
 
             # Sauvegarde intermédiaire
-            if (chunk_idx + 1) % 5 == 0:
+            if not args.trial and (chunk_idx + 1) % 5 == 0:
                 os.makedirs("checkpoints_monster", exist_ok=True)
                 save_path = "rosetta_mini_monster_v5.pt"
                 torch.save({
@@ -207,21 +253,29 @@ def train_monster():
                 model.train()
 
         # Sauvegarde OBLIGATOIRE en fin d'epoch
-        start_chunk = 0 # Réinitialisation pour l'epoch suivante
-        save_path = f"rosetta_mini_monster_epoch_{epoch+1}.pt"
-        torch.save({
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scaler_state_dict': scaler.state_dict(),
+        if not args.trial:
+            start_chunk = 0 # Réinitialisation pour l'epoch suivante
+            save_path = f"rosetta_mini_monster_epoch_{epoch+1}.pt"
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scaler_state_dict': scaler.state_dict(),
+                'step': global_step,
+                'epoch': epoch + 1, # Prêt pour l'epoch suivante
+                'chunk_idx': -1
+            }, save_path)
+            # On met aussi à jour le checkpoint principal
+            torch.save(torch.load(save_path), "rosetta_mini_monster_v5.pt")
+            print(f"💾 Epoch {epoch+1} terminée et sauvegardée.")
+
+            # Sauvegarde finale SWA
+            print("💎 Finalisation : Sauvegarde du modèle SWA (Stochastic Weight Averaging)...")
+            torch.save({
+            'model_state_dict': swa_model.module.state_dict(),
             'step': global_step,
-            'epoch': epoch + 1, # Prêt pour l'epoch suivante
-            'chunk_idx': -1
-        }, save_path)
-        # On met aussi à jour le checkpoint principal
-        torch.save(torch.load(save_path), "rosetta_mini_monster_v5.pt")
-        print(f"💾 Epoch {epoch+1} terminée et sauvegardée.")
+            'epoch': args.epochs
+            }, "rosetta_mini_monster_v6_final_swa.pt")
 
-    print("\n✅ Entraînement MONSTER terminé ! Rosetta-Mini est maintenant un génie.")
-
+            print("\n✅ Entraînement MONSTER terminé ! Rosetta-Mini est maintenant un génie.")
 if __name__ == "__main__":
     train_monster()
