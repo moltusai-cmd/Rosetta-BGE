@@ -60,7 +60,7 @@ Le modèle ne se contente pas de choisir entre deux pôles, il crée des synthè
 
 ## 5. Critical Discoveries & Anomalies
 L'exploration de la "face obscure" de l'espace latent a mis en lumière des propriétés fascinantes :
-- **The Answer to Everything :** L'addition de `Pizza + Quantum Physics + Love` a conduit Rosetta à générer le terme unique **"Hearton"** associé au chiffre **42**, suggérant une densité culturelle et littéraire codée dans les poids du modèle.
+- **The Answer to Everything :** L'addition de `Pizza + Quantum Physics + Love` a conduit Rosetta à générer le terme unique **"Hearton"**.
 - **The "Scight" Neologism :** Face à des concepts de peur abstraite, le modèle invente des mots-valises pour contracter le sens, démontrant une plasticité linguistique dépassant le simple dictionnaire.
 
 ---
