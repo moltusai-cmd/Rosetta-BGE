@@ -9,3 +9,5 @@ checkpoints_monster/
 *.pt
 *.log
 tokenizer.model
+data/
+archive/old_models/

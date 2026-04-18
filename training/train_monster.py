@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import os
 import torch
 import torch.nn as nn
@@ -13,7 +16,7 @@ import random
 
 # Import Rosetta Diffusion from local model.py
 from model import DiffusionRosetta
-from model_v6 import DiffusionRosettaV6
+from core.model_v6 import DiffusionRosettaV6
 
 def train_monster():
     parser = argparse.ArgumentParser(description="🚜 Rosetta-Monster 20M Training Suite")

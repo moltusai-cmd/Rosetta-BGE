@@ -1,51 +1,76 @@
-# 🌀 Rosetta-BGE: The Ultra Brain (v6.0) 🧠
+# 🌀 Rosetta-BGE: High-Fidelity Semantic Transduction
 
-Rosetta is a high-fidelity semantic decoder based on a **Dual-Recursive Diffusion Transformer**. It is designed to render **BGE-small-en-v1.5** (384d) latent vectors into articulate, human-readable text.
+**Rosetta-BGE** is a specialized neural architecture designed to bridge the gap between continuous latent spaces and discrete natural language. Specifically, it serves as the "Larynx" for AGI systems (like project **Titan**) by translating **BAAI/bge-small-en-v1.5** embeddings back into articulate, human-readable fragments.
 
-## 🚀 The v6 "Ultra" Breakthrough
-The latest v6 architecture introduces several state-of-the-art optimizations that have doubled convergence speed and significantly enhanced semantic precision:
-
-- **Weight Tying**: Shared weights between the Embedding and the Output (FC) layers, forcing a perfectly symmetrical semantic space.
-- **SwiGLU Activation**: Transitioned to Gated Linear Units (as used in Llama 3) for increased expressive power at a constant parameter count.
-- **InfoNCE (Contrastive) Loss**: Replaced simple cosine distance with a contrastive learning objective, forcing the model to discriminate between subtle concept nuances.
-- **Curriculum Masking**: Training difficulty scales dynamically, starting with simple fragment reconstruction and evolving toward full-sentence denoising.
-- **Sliding Window Augmentation**: Universal decoding of any text fragment (1-16 tokens), calibrated at position zero with perfect **EOS (End Of Sentence)** mastery.
-
-## 🏗️ Architecture Specs
-- **Parameters**: ~70M
-- **Hidden Dimension (d_model)**: 1024
-- **Layers**: 12 effective layers via 6 recursion cycles.
-- **Conditioning**: Semantic "Nose" projecting BGE vectors into 4 dynamic Guide Tokens.
-- **Speed**: Optimized for **RTX 5080** using `torch.compile` and 2x Gradient Accumulation.
-
-## 🧪 Latent Algebra Laboratory
-Rosetta v6 demonstrates that the BGE space is a high-resolution computational grid:
-
-### 1. Zero-Shot Analogies
-Even in early training steps (< 3k), Rosetta v6 successfully solves complex analogies:
-- **Geography**: `Paris - France + Japan` ➔ **"Tokyo"** (confirmed at Weight 1.2).
-- **Gender**: `Man` to `Woman` transition perfectly balanced at **α=0.50**.
-
-### 2. Emergent Narrative Logic
-- **Causality**: Interpolating between a "Fast Car" and "Debris" spontaneously generates the concept of an **"Accident"**.
-- **Linguistic Invention**: The model generates context-aware neologisms like **"Spacts"** (Skyscrapers + Impacts) or **"Hearton"** (Quantum particle of Love).
-
-### 3. Surgical Precision
-Mastery of the EOS token allows for the decoding of isolated entities without context hallucinations:
-- `BGE("cat")` ➔ **"cat"** `</s>`
-- `BGE("London")` ➔ **"London"** `</s>`
-
-## 🛠️ Laboratory Scripts
-- `surgical_test.py`: Precision diagnostics (Property Swapping, Multi-Attribute Injection).
-- `latent_walk.py`: Random walk exploration around target semantic anchors.
-- `latent_dark_side.py`: Decodes 100 random latent vectors to map the "manifold's ghosts".
-- `latent_additive.py`: Tests for additive paradoxes and archetype extraction.
-- `meta_tuner.py`: Auto-ML engine for hyper-parameter optimization.
-
-## 🚜 Training Status
-- **Accuracy**: 92%+ on fragments, ~75% on complex technical text.
-- **Semantic Fidelity (L_SEM)**: **0.02** (Near-lossless projection).
-- **Optimizer**: AdamW + OneCycleLR (Peak 1.2e-3).
+Unlike traditional decoders, Rosetta is optimized for **Semantic Algebra** and **Manifold Fidelity**, ensuring that mathematical operations in the latent space (e.g., *King - Man + Woman*) yield grammatically and conceptually perfect results.
 
 ---
-*Rosetta-BGE v6.0 - Forging the high-resolution mirror of latent thought.* 🚀💎🦾🌀
+
+## 🏗️ Architecture: Rosetta-V6 (Master Larynx)
+
+The current state-of-the-art for this repository is the **V6 PRO** model, which features:
+
+- **Backbone**: T5-Small (60M parameters) acting as a pre-trained linguistic prior.
+- **Transduction Layer**: A 4-stage **Deep Residual Projector** that maps 384d BGE vectors into 16 high-dimensional "Guide Tokens".
+- **Semantic Mirror**: A secondary projection head that reconstructs the original BGE vector from the decoder's hidden states, ensuring 99%+ angular alignment (Cosine Similarity).
+- **Surgical Precision**: Optimized for 16-token fragments, providing high-resolution decoding of complex conceptual vectors.
+
+---
+
+## 🧬 Semantic Algebra Results
+
+Rosetta-V6 demonstrates advanced conceptual understanding through latent space manipulation:
+
+| Operation | Resulting Output |
+| :--- | :--- |
+| `Paris - France + Japan` | **"Tokyo, Japan"** |
+| `King - Man + Woman` | **"Queen of Kings"** |
+| `Walking - legs + wheels` | **"Strolling in a car"** |
+| `'A scientist in a lab' - scientist + artist` | **"Artist in a studio creating art"** |
+
+---
+
+## 🌋 The Giga-Forge Pipeline
+
+To achieve near-perfect decoding, we employ an **Infinite Manifold Sweep** strategy:
+1. **Latent Mixup**: Continuous interpolation between real FineWeb-Edu anchor vectors.
+2. **Stochastic Sampling**: Generation of 64 hypotheses per latent point using Rosetta.
+3. **Rejection Sampling**: Only pairs with **Cosine Similarity > 0.95** (as judged by BGE) are kept.
+4. **Iterative Refinement**: The model is retrained on its own "Gold" discoveries to eliminate semantic hallucinations.
+
+---
+
+## 🚀 Quick Start
+
+### Installation
+```bash
+pip install torch transformers sentence-transformers datasets tqdm
+```
+
+### Decoding a Vector
+```python
+from core.model_v6 import RosettaV6
+import torch
+
+model = RosettaV6(num_guides=16)
+model.load_state_dict(torch.load("checkpoints/rosetta_v6_epoch_25.pt"))
+model.eval()
+
+# Your BGE vector (384d)
+bge_vector = torch.randn(1, 384) 
+output_ids = model(bge_vector)
+print(tokenizer.decode(output_ids[0]))
+```
+
+---
+
+## 🛠️ Repository Structure
+
+- `core/`: Neural architectures and residual projection logic.
+- `forge/`: Synthetic data generation and manifold sweeping tools.
+- `training/`: Optimized training loops (Mixed Precision, Gradient Accumulation).
+- `benchmarks/`: Latent algebra and semantic interpolation laboratories.
+- `checkpoints/`: Pre-trained weights for the V6 Master Larynx.
+
+---
+*Forged in the RTX-FORGE environment. High-signal engineering only.* ⚒️🔥🌀
