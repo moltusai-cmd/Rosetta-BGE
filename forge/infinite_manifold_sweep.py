@@ -22,9 +22,9 @@ def extreme_manifold_sweep_v3_9():
     
     # --- CONFIGURATION V3.9 (OVERLORD - RTX 5080) ---
     TARGET_SIMILARITY = 0.95
-    BATCH_SIZE = 256       # Grosse charge pour le GPU
-    POPULATION_SIZE = 32   # 8192 mutants par itération
-    SAVE_EVERY = 50000
+    BATCH_SIZE = 256       
+    POPULATION_SIZE = 32   
+    SAVE_EVERY = 5000      # Sauvegarde plus fréquente pour la sécurité
     
     print(f"🚀 GIGA-FORGE V3.9 | OVERLORD MODE (RTX 5080) 🚀")
     print(f"Throughput: {BATCH_SIZE * POPULATION_SIZE} mutants per cycle")
