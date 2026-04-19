@@ -15,12 +15,12 @@ import queue
 
 # Configuration du chemin racine
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.model_v6_pro import RosettaV6Pro
+from core.model_v8 import RosettaTransformer
 
-def train_rosetta_v6_pro():
+def train_rosetta_v8_attention():
     device = torch.device("cuda")
     
-    # Cocktail total (4M de points)
+    # 4 Millions de points
     folders = [
         'data/surgical_t5_chunks',
         'data/surgical_monster_chunks',
@@ -53,27 +53,29 @@ def train_rosetta_v6_pro():
                         labels = new_labels
                     load_queue.put((data['bge'].half(), labels))
                 except Exception as e:
-                    print(f"⚠️ Loader error: {e}")
+                    print(f"⚠️ Loader error on {f}: {e}")
 
     threading.Thread(target=loader_thread_func, daemon=True).start()
 
-    # 2. Modèle V6 Pro
-    model = RosettaV6Pro(num_guides=16).to(device)
+    # 2. Modèle V8 Attention
+    model = RosettaTransformer(num_guides=16).to(device)
     model = torch.compile(model)
     
     # 3. Optimisation
+    # On commence avec un LR de 1e-4 pour l'attention
     optimizer = AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
-    total_steps = len(files) * 10
-    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=1000, num_training_steps=total_steps)
+    total_steps = len(files) * 20
+    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=2000, num_training_steps=total_steps)
     
     scaler = GradScaler()
+    cosine_loss_fn = nn.CosineEmbeddingLoss()
 
-    print(f"🔥 V6 PRO MONSTER FORGE 🔥")
-    print(f"Architecture: 6 Blocks / 1024 Hidden Dim")
+    print(f"🔥 V8 ATTENTION FORGE ACTIVATED 🔥")
+    print(f"Architecture: Transformer Encoder (6 layers, 8 heads)")
 
     model.train()
-    for epoch in range(10):
-        total_pbar = tqdm(total=len(files), desc=f"V6 Pro Epoch {epoch+1}/10")
+    for epoch in range(20):
+        total_pbar = tqdm(total=len(files), desc=f"V8 Epoch {epoch+1}/20")
         
         for _ in range(len(files)):
             bge_all, labels_all = load_queue.get()
@@ -88,23 +90,29 @@ def train_rosetta_v6_pro():
                 b_labels[b_labels == 0] = -100
 
                 with autocast(device_type='cuda', dtype=torch.bfloat16):
-                    # Uniquement la Cross-Entropy
-                    loss, _, _ = model(b_bge, b_labels)
+                    # Forward V8 (Transformer)
+                    loss_ce, _, bge_recon = model(b_bge, b_labels)
+                    
+                    # Mirror Head Loss
+                    cos_target = torch.ones(b_bge.size(0)).to(device)
+                    loss_cosine = cosine_loss_fn(bge_recon, b_bge, cos_target)
+                    
+                    total_loss = loss_ce + 3.0 * loss_cosine
 
                 optimizer.zero_grad()
-                scaler.scale(loss).backward()
+                scaler.scale(total_loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
                 scheduler.step()
 
-            total_pbar.set_postfix({"L_CE": f"{loss.item():.4f}"})
+            total_pbar.set_postfix({"L_CE": f"{loss_ce.item():.3f}", "L_COS": f"{loss_cosine.item():.4f}"})
             total_pbar.update(1)
 
-        # Sauvegarde
-        torch.save(model.state_dict(), f"checkpoints/rosetta_v6_pro_e{epoch+1}.pt")
+        # Sauvegarde stratégique
+        torch.save(model.state_dict(), f"checkpoints/rosetta_v8_attention_e{epoch+1}.pt")
 
-    print("🏁 V6 PRO TRAINING COMPLETE.")
-    torch.save(model.state_dict(), "checkpoints/rosetta_v6_pro_final.pt")
+    print("🏁 V8 ATTENTION TRAINING COMPLETE.")
+    torch.save(model.state_dict(), "checkpoints/rosetta_v8_master.pt")
 
 if __name__ == "__main__":
-    train_rosetta_v6_pro()
+    train_rosetta_v8_attention()

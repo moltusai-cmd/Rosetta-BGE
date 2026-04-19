@@ -13,11 +13,11 @@ import random
 import threading
 import queue
 
-# Configuration du chemin racine
+# Configuration du chemin racine pour les imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.model_v6_pro import RosettaV6Pro
 
-def train_rosetta_v6_pro():
+def train_rosetta_v6_pro_monster():
     device = torch.device("cuda")
     
     # Cocktail total (4M de points)
@@ -61,24 +61,35 @@ def train_rosetta_v6_pro():
     model = RosettaV6Pro(num_guides=16).to(device)
     model = torch.compile(model)
     
-    # 3. Optimisation
-    optimizer = AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
-    total_steps = len(files) * 10
-    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=1000, num_training_steps=total_steps)
+    # 3. Calcul précis des steps pour OneCycleLR (30 Époques)
+    sample_data = torch.load(files[0], map_location='cpu', weights_only=True)
+    samples_per_chunk = sample_data['bge'].size(0)
+    batch_size = 256
+    steps_per_chunk = samples_per_chunk // batch_size
+    total_steps = len(files) * steps_per_chunk * 30 # 30 époques
+    
+    # Optimisation Turbo
+    optimizer = AdamW(model.parameters(), lr=1.5e-4, weight_decay=0.05)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, 
+        max_lr=8e-4, 
+        total_steps=total_steps + 100,
+        pct_start=0.15, # Warmup réduit pour un run long
+        cycle_momentum=False
+    )
     
     scaler = GradScaler()
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 
-    print(f"🔥 V6 PRO MONSTER FORGE 🔥")
-    print(f"Architecture: 6 Blocks / 1024 Hidden Dim")
+    print(f"🔥 V6 PRO OVERNIGHT FORGE 🔥")
+    print(f"Projector: 10 Blocks / 1024 Dim | 30 Epochs | Steps: {total_steps}")
 
     model.train()
-    for epoch in range(10):
-        total_pbar = tqdm(total=len(files), desc=f"V6 Pro Epoch {epoch+1}/10")
+    for epoch in range(30):
+        total_pbar = tqdm(total=len(files), desc=f"V6 Pro Epoch {epoch+1}/30")
         
         for _ in range(len(files)):
             bge_all, labels_all = load_queue.get()
-            
-            batch_size = 256
             indices = torch.randperm(len(bge_all))
             
             for i in range(0, len(indices), batch_size):
@@ -97,14 +108,14 @@ def train_rosetta_v6_pro():
                 scaler.update()
                 scheduler.step()
 
-            total_pbar.set_postfix({"L_CE": f"{loss.item():.4f}"})
+            total_pbar.set_postfix({"L_CE": f"{loss.item():.4f}", "LR": f"{scheduler.get_last_lr()[0]:.2e}"})
             total_pbar.update(1)
 
         # Sauvegarde
-        torch.save(model.state_dict(), f"checkpoints/rosetta_v6_pro_e{epoch+1}.pt")
+        torch.save(model.state_dict(), f"checkpoints/rosetta_v6_pro_monster_e{epoch+1}.pt")
 
-    print("🏁 V6 PRO TRAINING COMPLETE.")
-    torch.save(model.state_dict(), "checkpoints/rosetta_v6_pro_final.pt")
+    print("🏁 V6 PRO MONSTER TRAINING COMPLETE.")
+    torch.save(model.state_dict(), "checkpoints/rosetta_v6_pro_master.pt")
 
 if __name__ == "__main__":
-    train_rosetta_v6_pro()
+    train_rosetta_v6_pro_monster()
